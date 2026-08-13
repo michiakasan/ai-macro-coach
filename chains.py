@@ -36,6 +36,7 @@ from functools import lru_cache
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 from langchain_openai import ChatOpenAI
+from openai import AuthenticationError
 
 from models import MACRO_LABELS, MacroTotals, MealEstimate, SuggestionSet
 
@@ -43,16 +44,46 @@ DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
 class MissingAPIKeyError(RuntimeError):
-    """Raised when OPENAI_API_KEY isn't configured, so the UI can show a clean message."""
+    """Raised when OPENAI_API_KEY is absent, placeholder, or rejected by OpenAI.
+
+    The UI prints this straight to the user, so the message has to say what to fix.
+    """
+
+
+# The value shipped in .env.example. Copying that file without editing it is the most
+# likely first-run mistake, and it fails as an opaque 401 unless we catch it here.
+PLACEHOLDER_KEYS = {"sk-your-key-here", "sk-...", ""}
 
 
 def _make_llm(temperature: float) -> ChatOpenAI:
     """Build the chat model. Key comes from OPENAI_API_KEY (loaded by python-dotenv)."""
-    if not os.getenv("OPENAI_API_KEY"):
+    key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if not key:
         raise MissingAPIKeyError(
             "OPENAI_API_KEY is not set. Copy .env.example to .env and add your key."
         )
+    if key in PLACEHOLDER_KEYS or "your-key" in key:
+        raise MissingAPIKeyError(
+            "OPENAI_API_KEY is still the placeholder from .env.example. "
+            "Edit .env and replace it with a real key from "
+            "https://platform.openai.com/api-keys"
+        )
     return ChatOpenAI(model=DEFAULT_MODEL, temperature=temperature)
+
+
+def _invoke(chain: Runnable, payload: dict) -> object:
+    """Run a chain, translating OpenAI auth failures into a message worth reading.
+
+    Everything else (rate limits, network, schema validation) propagates unchanged --
+    app.py shows those verbatim, since the detail is what makes them debuggable.
+    """
+    try:
+        return chain.invoke(payload)
+    except AuthenticationError as exc:
+        raise MissingAPIKeyError(
+            "OpenAI rejected the API key in your .env (401). Check that it is current "
+            "and has not been revoked: https://platform.openai.com/api-keys"
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -112,11 +143,12 @@ def get_meal_estimation_chain() -> Runnable:
 def estimate_meal(meal_description: str) -> MealEstimate:
     """Run chain 1. Returns a validated MealEstimate the user can then edit."""
     chain = get_meal_estimation_chain()
-    return chain.invoke(
+    return _invoke(
+        chain,
         {
             "meal_description": meal_description.strip(),
             "now": datetime.now().strftime("%A, %d %B %Y, %H:%M"),
-        }
+        },
     )
 
 
@@ -281,7 +313,8 @@ def recommend_meals(
     chain = get_recommendation_chain()
     label = MACRO_LABELS[furthest_behind][0] if furthest_behind else "nothing -- all targets met"
 
-    return chain.invoke(
+    return _invoke(
+        chain,
         {
             "current_time": now.strftime("%A %H:%M"),
             "time_of_day": time_of_day_label(now),

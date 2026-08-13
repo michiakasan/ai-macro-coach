@@ -16,7 +16,8 @@
       "Bash(echo \"install exit:$?\")",
       "Bash(curl -s -o /dev/null -w \"health: %{http_code}\\\\n\" http://localhost:8577/_stcore/health)",
       "Bash(curl -s -o /dev/null -w \"page:   %{http_code}\\\\n\" http://localhost:8577/)",
-      "Bash(.venv/bin/python /tmp/claude-1000/-home-akari-michimukai-Documents-food-recommendation/dc704ec6-25eb-4c61-8148-4b44c3f761b3/scratchpad/drive.py)"
+      "Bash(.venv/bin/python /tmp/claude-1000/-home-akari-michimukai-Documents-food-recommendation/dc704ec6-25eb-4c61-8148-4b44c3f761b3/scratchpad/drive.py)",
+      "Bash(.venv/bin/python -c ' *)"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/*/dc704ec6*/scratchpad"
